@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/batchdb
+    username: postgres
+    password: postgres
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  batch:
+    jdbc:
+      initialize-schema: never
+    job:
+      enabled: false
+
+# Path to legacy CSV data cloned from GitHub (bank_legacy_data)
+bankxyz:
+  dataDir: ${BANK_DATA_DIR:./data}
+
+logging:
+  level:
+    root: INFO
+    org.springframework.batch: INFO

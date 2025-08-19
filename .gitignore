@@ -1,0 +1,9 @@
+/target
+/.idea
+/.vscode
+/postgres-data
+*.iml
+*.log
+*.tmp
+*.DS_Store
+/.mvn

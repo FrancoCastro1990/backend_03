@@ -1,0 +1,16 @@
+account_number,owner_name,type,balance
+ACC001,Juan Pérez,savings,15000.50
+ACC002,María González,checking,3200.75
+ACC003,Carlos Rodriguez,savings,28500.00
+ACC004,Ana López,checking,1250.25
+ACC005,Roberto Martínez,business,45000.00
+ACC006,Laura Fernández,savings,8900.80
+ACC007,Diego Silva,checking,2100.00
+ACC008,Sofía Castro,savings,12750.30
+ACC009,Miguel Torres,business,67500.50
+ACC010,Carmen Ruiz,checking,950.75
+ACC011,Fernando Vargas,savings,19800.00
+ACC012,Paola Mendoza,checking,3450.60
+ACC013,Andrés Jiménez,business,32100.25
+ACC014,Valentina Herrera,savings,7200.40
+ACC015,Gabriel Morales,checking,1800.90
