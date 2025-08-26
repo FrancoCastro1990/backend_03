@@ -1,0 +1,11 @@
+tx_id,account_number,tx_date,description,amount
+TX001,ACC101,2024-01-01,Debito en cuenta,1000
+TX002,ACC102,2024-01-02,Credito mensual,1500
+TX003,ACC103,2024-01-03,Debito con problema,-200
+TX004,ACC104,2024-01-03,Debito sin monto,,
+TX005,ACC105,2024/01/04,Credito formato incorrecto,800
+TX006,ACC106,2024-01-05,Debito regular,700
+TX007,ACC107,2024-01-06,Credito mensual,1200
+TX008,ACC106,2024-01-05,Debito duplicado,700
+TX009,ACC108,2024-01-07,Debito alto,3000
+TX010,ACC109,2024-01-08,Transaccion invalida,1000

@@ -18,15 +18,18 @@ public class JobController {
     private final Job dailyReportJob;
     private final Job monthlyInterestJob;
     private final Job annualStatementJob;
+    private final Job annualAccountsJob;
 
     public JobController(JobLauncher jobLauncher, 
                         @Qualifier("dailyReportJob") Job dailyReportJob, 
                         @Qualifier("monthlyInterestJob") Job monthlyInterestJob, 
-                        @Qualifier("annualStatementJob") Job annualStatementJob) {
+                        @Qualifier("annualStatementJob") Job annualStatementJob,
+                        @Qualifier("annualAccountsJob") Job annualAccountsJob) {
         this.jobLauncher = jobLauncher;
         this.dailyReportJob = dailyReportJob;
         this.monthlyInterestJob = monthlyInterestJob;
         this.annualStatementJob = annualStatementJob;
+        this.annualAccountsJob = annualAccountsJob;
     }
 
     @GetMapping("/jobs/run")
@@ -35,6 +38,7 @@ public class JobController {
             case "dailyReportJob" -> dailyReportJob;
             case "monthlyInterestJob" -> monthlyInterestJob;
             case "annualStatementJob" -> annualStatementJob;
+            case "annualAccountsJob" -> annualAccountsJob;
             default -> throw new IllegalArgumentException("Unknown job: " + name);
         };
         JobParameters params = new JobParametersBuilder()
