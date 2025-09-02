@@ -1,7 +1,9 @@
 package com.bankxyz.batch.processor;
 
 import com.bankxyz.batch.dto.CuentaAnualCsv;
-import com.bankxyz.batch.model.AnnualStatement;
+import com.bankxyz.batch.model.AnnualAccountData;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.stereotype.Component;
 
@@ -9,144 +11,125 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.regex.Pattern;
 
 /**
- * Procesador para cuentas anuales que maneja datos problemáticos
+ * Procesador SIMPLIFICADO para cuentas_anuales.csv
+ * REQUERIMIENTO: "Compilar datos anuales para cada cuenta y generar un informe detallado para auditorías"
  */
 @Component
-public class CuentaAnualProcessor implements ItemProcessor<CuentaAnualCsv, AnnualStatement> {
+public class CuentaAnualProcessor implements ItemProcessor<CuentaAnualCsv, AnnualAccountData> {
     
-    private static final Pattern ACCOUNT_PATTERN = Pattern.compile("^\\d+$");
+    private static final Logger logger = LoggerFactory.getLogger(CuentaAnualProcessor.class);
+    
     private static final DateTimeFormatter[] DATE_FORMATTERS = {
         DateTimeFormatter.ofPattern("yyyy-MM-dd"),
-        DateTimeFormatter.ofPattern("yyyy/MM/dd"),
+        DateTimeFormatter.ofPattern("dd-MM-yyyy"),
         DateTimeFormatter.ofPattern("dd/MM/yyyy"),
-        DateTimeFormatter.ofPattern("MM/dd/yyyy")
+        DateTimeFormatter.ofPattern("yyyy/MM/dd")
     };
-    
+
     @Override
-    public AnnualStatement process(CuentaAnualCsv item) throws Exception {
-        if (item == null) {
+    public AnnualAccountData process(CuentaAnualCsv item) throws Exception {
+        try {
+            // Validar campos básicos
+            if (item.getCuenta_id() == null || item.getCuenta_id().trim().isEmpty()) {
+                logger.warn("⚠️ Registro sin número de cuenta, omitiendo: {}", item);
+                return null;
+            }
+
+            // Parsear y validar fecha
+            LocalDate fecha = parseDate(item.getFecha());
+            if (fecha == null) {
+                logger.warn("⚠️ Fecha inválida para cuenta {}: {}", item.getCuenta_id(), item.getFecha());
+                return null;
+            }
+
+            // Extraer año
+            Integer year = fecha.getYear();
+            
+            // Validar año razonable
+            if (year < 2020 || year > LocalDate.now().getYear()) {
+                logger.warn("⚠️ Año inválido para cuenta {}: {}", item.getCuenta_id(), year);
+                return null;
+            }
+
+            // Parsear monto (para cuentas anuales solo hay un monto)
+            BigDecimal monto = parseAmount(item.getMonto());
+            String transaccion = item.getTransaccion();
+            
+            // Inicializar depósitos y retiros
+            BigDecimal depositos = BigDecimal.ZERO;
+            BigDecimal retiros = BigDecimal.ZERO;
+            
+            // Analizar tipo de transacción para clasificar como depósito o retiro
+            if (transaccion != null && monto != null) {
+                String tipoLimpio = transaccion.trim().toLowerCase();
+                switch (tipoLimpio) {
+                    case "deposito", "depósito", "compra" -> depositos = monto.abs();
+                    case "retiro", "pago" -> retiros = monto.abs();
+                }
+            }
+
+            // Calcular balance de cierre (simplificado)
+            BigDecimal openingBalance = BigDecimal.ZERO; // No disponible en CSV
+            BigDecimal closingBalance = depositos.subtract(retiros);
+
+            // 🎯 REQUERIMIENTO: GENERAR INFORME DETALLADO PARA AUDITORÍAS
+            logger.info("📊 INFORME ANUAL - Cuenta: {}, Año: {}, Depósitos: ${}, Retiros: ${}, Balance final: ${}", 
+                item.getCuenta_id(), year, depositos, retiros, closingBalance);
+            
+            // Log detallado para auditoría
+            if (depositos.compareTo(new BigDecimal("100000")) > 0 || retiros.compareTo(new BigDecimal("100000")) > 0) {
+                logger.warn("🔍 AUDITORÍA - Cuenta {} requiere revisión: Movimientos altos en {}", item.getCuenta_id(), year);
+            }
+
+            // Crear datos anuales compilados usando campos directos
+            AnnualAccountData annualData = new AnnualAccountData();
+            annualData.year = year;
+            annualData.accountNumber = item.getCuenta_id();
+            annualData.openingBalance = openingBalance;
+            annualData.totalDeposits = depositos;
+            annualData.totalWithdrawals = retiros;
+            annualData.closingBalance = closingBalance;
+            annualData.auditDate = LocalDate.now();
+
+            return annualData;
+
+        } catch (Exception e) {
+            logger.error("❌ Error procesando datos anuales cuenta {}: {}", item.getCuenta_id(), e.getMessage());
             return null;
         }
-        
-        // Validaciones y limpieza de datos
-        if (!isValidRecord(item)) {
-            System.err.println("SKIPPING - Registro inválido: " + item);
-            return null;
-        }
-        
-        AnnualStatement statement = new AnnualStatement();
-        
-        // Limpiar y convertir cuenta_id
-        String accountNumber = cleanAccountNumber(item.getCuenta_id());
-        statement.setAccountNumber(accountNumber);
-        
-        // Parsear fecha y extraer año
-        LocalDate date = parseDate(item.getFecha());
-        if (date != null) {
-            statement.setYear(date.getYear());
-        } else {
-            statement.setYear(2024); // Año por defecto
-        }
-        
-        // Parsear monto
-        BigDecimal amount = parseAmount(item.getMonto());
-        
-        // Clasificar transacción y asignar montos
-        String tipoTransaccion = item.getTransaccion() != null ? 
-                                item.getTransaccion().toLowerCase().trim() : "";
-        
-        statement.setOpeningBalance(BigDecimal.ZERO); // Se calculará en agregación
-        
-        if (amount.compareTo(BigDecimal.ZERO) >= 0 && 
-            (tipoTransaccion.contains("deposito") || tipoTransaccion.contains("ingreso"))) {
-            statement.setTotalDeposits(amount);
-            statement.setTotalWithdrawals(BigDecimal.ZERO);
-        } else if (amount.compareTo(BigDecimal.ZERO) < 0 || 
-                   tipoTransaccion.contains("retiro") || tipoTransaccion.contains("compra")) {
-            statement.setTotalDeposits(BigDecimal.ZERO);
-            statement.setTotalWithdrawals(amount.abs());
-        } else {
-            // Caso neutro
-            statement.setTotalDeposits(amount.max(BigDecimal.ZERO));
-            statement.setTotalWithdrawals(amount.min(BigDecimal.ZERO).abs());
-        }
-        
-        statement.setClosingBalance(BigDecimal.ZERO); // Se calculará en agregación
-        
-        // Log para debugging
-        System.out.println(String.format("Cuenta anual procesada: %s - %d - %s - %s", 
-            accountNumber, statement.getYear(), tipoTransaccion, amount));
-        
-        return statement;
     }
-    
-    private boolean isValidRecord(CuentaAnualCsv item) {
-        // Validar cuenta_id
-        if (item.getCuenta_id() == null || item.getCuenta_id().trim().isEmpty()) {
-            return false;
-        }
-        
-        // Validar fecha
-        if (item.getFecha() == null || item.getFecha().trim().isEmpty()) {
-            return false;
-        }
-        
-        // Validar que tenga al menos tipo de transacción o monto
-        boolean hasTipo = item.getTransaccion() != null && !item.getTransaccion().trim().isEmpty();
-        boolean hasMonto = item.getMonto() != null && !item.getMonto().trim().isEmpty();
-        
-        return hasTipo || hasMonto;
-    }
-    
-    private String cleanAccountNumber(String cuentaId) {
-        if (cuentaId == null) return "UNKNOWN";
-        
-        String cleaned = cuentaId.trim();
-        
-        // Si es solo un número, convertir a formato ACC###
-        if (ACCOUNT_PATTERN.matcher(cleaned).matches()) {
-            return "ACC" + cleaned;
-        }
-        
-        return cleaned;
-    }
-    
+
     private LocalDate parseDate(String dateStr) {
         if (dateStr == null || dateStr.trim().isEmpty()) {
             return null;
         }
-        
-        String cleaned = dateStr.trim();
-        
+
+        // Manejar fechas inválidas
+        if (dateStr.contains("-13-") || dateStr.contains("/13/") || 
+            dateStr.endsWith("-13") || dateStr.startsWith("13/")) {
+            return null;
+        }
+
         for (DateTimeFormatter formatter : DATE_FORMATTERS) {
             try {
-                return LocalDate.parse(cleaned, formatter);
-            } catch (DateTimeParseException e) {
-                // Continuar con el siguiente formato
+                return LocalDate.parse(dateStr.trim(), formatter);
+            } catch (DateTimeParseException ignored) {
+                // Intentar siguiente formato
             }
         }
-        
-        System.err.println("Error parsing date: " + dateStr + " - usando fecha actual");
-        return LocalDate.now();
+        return null;
     }
-    
+
     private BigDecimal parseAmount(String amountStr) {
         if (amountStr == null || amountStr.trim().isEmpty()) {
             return BigDecimal.ZERO;
         }
-        
+
         try {
-            // Limpiar el string de espacios y caracteres no numéricos excepto . y -
-            String cleaned = amountStr.trim().replaceAll("[^\\d.-]", "");
-            if (cleaned.isEmpty()) {
-                return BigDecimal.ZERO;
-            }
-            return new BigDecimal(cleaned);
+            return new BigDecimal(amountStr.trim()).abs(); // Usar valor absoluto para evitar negativos
         } catch (NumberFormatException e) {
-            System.err.println("Error parsing amount: " + amountStr + " - usando 0.0");
             return BigDecimal.ZERO;
         }
     }

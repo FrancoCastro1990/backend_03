@@ -6,11 +6,14 @@ import com.bankxyz.batch.dto.CuentaAnualCsv;
 import com.bankxyz.batch.dto.TransactionCsv;
 import com.bankxyz.batch.listener.BatchJobListener;
 import com.bankxyz.batch.listener.BatchStepListener;
-import com.bankxyz.batch.model.*;
+import com.bankxyz.batch.model.Account;
+import com.bankxyz.batch.model.AnnualAccountData;
+import com.bankxyz.batch.model.LegacyTransaction;
 import com.bankxyz.batch.policy.CustomSkipPolicy;
+import com.bankxyz.batch.processor.AccountProcessor;
 import com.bankxyz.batch.processor.CuentaAnualProcessor;
-import com.bankxyz.batch.processor.EnhancedAccountProcessor;
-import com.bankxyz.batch.processor.EnhancedTransactionProcessor;
+import com.bankxyz.batch.processor.TransactionProcessor;
+import com.bankxyz.batch.writer.AccountUpsertWriter;
 import jakarta.persistence.EntityManagerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +22,7 @@ import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JpaItemWriter;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
@@ -30,9 +34,6 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.YearMonth;
 
 @Configuration
 public class BatchJobsConfig {
@@ -43,38 +44,63 @@ public class BatchJobsConfig {
     private final BatchJobListener jobListener;
     private final BatchStepListener stepListener;
     private final CustomSkipPolicy customSkipPolicy;
-    private final EnhancedAccountProcessor enhancedAccountProcessor;
-    private final EnhancedTransactionProcessor enhancedTransactionProcessor;
+    private final AccountProcessor accountProcessor;
+    private final TransactionProcessor transactionProcessor;
+    private final CuentaAnualProcessor cuentaAnualProcessor;
+    private final AccountUpsertWriter accountUpsertWriter;
 
     public BatchJobsConfig(AppProperties props, 
                           BatchJobListener jobListener,
                           BatchStepListener stepListener,
                           CustomSkipPolicy customSkipPolicy,
-                          EnhancedAccountProcessor enhancedAccountProcessor,
-                          EnhancedTransactionProcessor enhancedTransactionProcessor) {
+                          AccountProcessor accountProcessor,
+                          TransactionProcessor transactionProcessor,
+                          CuentaAnualProcessor cuentaAnualProcessor,
+                          AccountUpsertWriter accountUpsertWriter) {
         this.props = props;
         this.jobListener = jobListener;
         this.stepListener = stepListener;
         this.customSkipPolicy = customSkipPolicy;
-        this.enhancedAccountProcessor = enhancedAccountProcessor;
-        this.enhancedTransactionProcessor = enhancedTransactionProcessor;
+        this.accountProcessor = accountProcessor;
+        this.transactionProcessor = transactionProcessor;
+        this.cuentaAnualProcessor = cuentaAnualProcessor;
+        this.accountUpsertWriter = accountUpsertWriter;
     }
 
-    /* ---------------- TaskExecutor para Procesamiento Paralelo (3 hilos) ---------------- */
+    /* ---------------- TaskExecutor para Procesamiento Paralelo Optimizado ---------------- */
     
     @Bean
     public TaskExecutor batchTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(3);        // 3 hilos como requisito
-        executor.setMaxPoolSize(3);         // Máximo 3 hilos
-        executor.setQueueCapacity(50);      // Cola para tareas pendientes
-        executor.setThreadNamePrefix("batch-thread-");
+        
+        // Configuración optimizada para procesamiento de archivos CSV
+        executor.setCorePoolSize(3);        // 3 hilos core como requisito
+        executor.setMaxPoolSize(5);         // Máximo 5 hilos para picos de carga
+        executor.setQueueCapacity(100);     // Cola más grande para mejor throughput
+        executor.setThreadNamePrefix("batch-csv-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(30);
+        executor.setAwaitTerminationSeconds(60); // Más tiempo para finalización limpia
+        
+        // Configuración de rechazo para manejo de sobrecarga
+        executor.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+        
         executor.initialize();
         
-        logger.info("TaskExecutor configurado: 3 hilos para procesamiento paralelo");
+        logger.info("✅ TaskExecutor configurado: Core={}, Max={}, Queue={} para procesamiento paralelo optimizado", 
+                   executor.getCorePoolSize(), executor.getMaxPoolSize(), executor.getQueueCapacity());
         return executor;
+    }
+    
+    /* ---------------- Configuraciones de Chunk Size Dinámico ---------------- */
+    
+    private int calculateOptimalChunkSize(String jobType) {
+        // Ajustar chunk size según el tipo de job y complejidad de procesamiento
+        return switch (jobType) {
+            case "transactions" -> 10; // Transacciones son más ligeras
+            case "accounts" -> 5;      // Cuentas tienen más validaciones
+            case "annual" -> 8;        // Estados anuales son medianamente complejos
+            default -> 5;
+        };
     }
 
     /* ---------------- Readers ---------------- */
@@ -86,7 +112,8 @@ public class BatchJobsConfig {
                 .resource(new FileSystemResource(props.getDataDir() + "/intereses.csv"))
                 .linesToSkip(1)
                 .delimited()
-                .names("account_number","owner_name","type","balance")
+                // ✅ CORREGIDO: Nombres de campos actualizados para coincidir con CSV real
+                .names("cuenta_id","nombre","saldo","edad","tipo")
                 .fieldSetMapper(new BeanWrapperFieldSetMapper<>() {{
                     setTargetType(AccountCsv.class);
                 }})
@@ -100,7 +127,8 @@ public class BatchJobsConfig {
                 .resource(new FileSystemResource(props.getDataDir() + "/transacciones.csv"))
                 .linesToSkip(1)
                 .delimited()
-                .names("tx_id","account_number","tx_date","description","amount")
+                // ✅ CORREGIDO: Nombres de campos actualizados para coincidir con CSV real
+                .names("id","fecha","monto","tipo")
                 .fieldSetMapper(new BeanWrapperFieldSetMapper<>() {{
                     setTargetType(TransactionCsv.class);
                 }})
@@ -123,51 +151,19 @@ public class BatchJobsConfig {
         return w;
     }
 
-    /* ---------------- Steps Mejorados con Paralelismo y Políticas Personalizadas ---------------- */
-
-    @Bean
-    public Step loadAccountsStep(JobRepository jobRepository, 
-                                PlatformTransactionManager txManager,
-                                TaskExecutor batchTaskExecutor,
-                                FlatFileItemReader<AccountCsv> accountReader,
-                                JpaItemWriter<Account> accountWriter) {
-        return new StepBuilder("loadAccountsStep", jobRepository)
-                .<AccountCsv, Account>chunk(5, txManager)  // Chunk size = 5 según requisito
-                .reader(accountReader)
-                .processor(enhancedAccountProcessor)       // Procesador mejorado
-                .writer(accountWriter)
-                .taskExecutor(batchTaskExecutor)           // 3 hilos paralelos
-                .faultTolerant()
-                .skipPolicy(customSkipPolicy)              // Política personalizada
-                .retryLimit(3)                             // Reintentos automáticos
-                .retry(Exception.class)
-                .listener(stepListener)                    // Listener para logs
-                .build();
-    }
-
-    @Bean
-    public Step loadTransactionsStep(JobRepository jobRepository, 
-                                    PlatformTransactionManager txManager,
-                                    TaskExecutor batchTaskExecutor,
-                                    FlatFileItemReader<TransactionCsv> transactionReader,
-                                    JpaItemWriter<LegacyTransaction> transactionWriter) {
-        return new StepBuilder("loadTransactionsStep", jobRepository)
-                .<TransactionCsv, LegacyTransaction>chunk(5, txManager)  // Chunk size = 5
-                .reader(transactionReader)
-                .processor(enhancedTransactionProcessor)   // Procesador mejorado
-                .writer(transactionWriter)
-                .taskExecutor(batchTaskExecutor)           // 3 hilos paralelos
-                .faultTolerant()
-                .skipPolicy(customSkipPolicy)              // Política personalizada
-                .retryLimit(3)                             // Reintentos automáticos
-                .retry(Exception.class)
-                .listener(stepListener)                    // Listener para logs
-                .build();
-    }
+    /* ---------------- Steps Eliminados - Razón: Creaban Mapeos Artificiales ---------------- */
+    
+    // ❌ ELIMINADO: loadAccountsStep - Creaba cuentas ACC001-ACC010 artificiales
+    // ❌ ELIMINADO: loadTransactionsStep - Mapeaba transacciones a cuentas inexistentes
+    // 
+    // ✅ NUEVO ENFOQUE: Cada Job procesa su CSV independientemente
+    // - monthlyInterestJob → intereses.csv → Crea cuentas reales (101-150)
+    // - dailyReportJob → transacciones.csv → Transacciones independientes
+    // - annualAccountsJob → cuentas_anuales.csv → Datos anuales independientes
 
     /* ---------------- Jobs Mejorados con Listeners y Políticas de Re-ejecución ---------------- */
 
-    // Job 1: Reporte de Transacciones Diarias - MEJORADO
+    // Job 1: Reporte de Transacciones Independientes - SIMPLIFICADO
     @Bean
     public Job dailyReportJob(JobRepository jobRepository, 
                              PlatformTransactionManager txManager,
@@ -175,48 +171,21 @@ public class BatchJobsConfig {
                              FlatFileItemReader<TransactionCsv> transactionReader,
                              EntityManagerFactory emf) {
 
-        JpaItemWriter<DailyTransactionReport> reportWriter = new JpaItemWriter<>();
-        reportWriter.setEntityManagerFactory(emf);
+        // WRITER SIMPLIFICADO - guarda transacciones en transaction_legacy
+        JpaItemWriter<LegacyTransaction> writer = new JpaItemWriter<>();
+        writer.setEntityManagerFactory(emf);
 
-        ItemProcessor<TransactionCsv, DailyTransactionReport> reportProcessor = new ItemProcessor<>() {
-            @Override
-            public DailyTransactionReport process(TransactionCsv item) throws Exception {
-                // Usar el procesador mejorado para validaciones básicas
-                LegacyTransaction validatedTx = enhancedTransactionProcessor.process(item);
-                if (validatedTx == null) {
-                    return null; // skip invalid records
-                }
-                
-                DailyTransactionReport r = new DailyTransactionReport();
-                r.setReportDate(validatedTx.getTxDate());
-                r.setAccountNumber(validatedTx.getAccountNumber());
-                r.setTotalAmount(validatedTx.getAmount());
-                r.setTxCount(1);
-                
-                // Detección mejorada de anomalías
-                BigDecimal amt = validatedTx.getAmount();
-                boolean anomaly = amt.abs().compareTo(new BigDecimal("100000")) > 0 || 
-                                 amt.compareTo(BigDecimal.ZERO) == 0 ||
-                                 validatedTx.getTxDate().isAfter(LocalDate.now());
-                r.setAnomalies(anomaly ? 1 : 0);
-                
-                if (anomaly) {
-                    logger.warn("Anomalía detectada en reporte diario: TX {} - Monto: {}", 
-                        validatedTx.getTxId(), amt);
-                }
-                
-                return r;
-            }
-        };
+        // PROCESSOR SIMPLIFICADO - usa directamente el procesador (detecta anomalías internamente)
+        ItemProcessor<TransactionCsv, LegacyTransaction> processor = transactionProcessor;
 
         Step step = new StepBuilder("dailyReportStep", jobRepository)
-                .<TransactionCsv, DailyTransactionReport>chunk(5, txManager)  // Chunk size = 5
+                .<TransactionCsv, LegacyTransaction>chunk(calculateOptimalChunkSize("transactions"), txManager)  
                 .reader(transactionReader)
-                .processor(reportProcessor)
-                .writer(reportWriter)
-                .taskExecutor(batchTaskExecutor)           // Procesamiento paralelo
+                .processor(processor)
+                .writer(writer)
+                .taskExecutor(batchTaskExecutor)           
                 .faultTolerant()
-                .skipPolicy(customSkipPolicy)              // Política personalizada
+                .skipPolicy(customSkipPolicy)              
                 .retryLimit(3)
                 .retry(Exception.class)
                 .listener(stepListener)
@@ -224,11 +193,11 @@ public class BatchJobsConfig {
 
         return new JobBuilder("dailyReportJob", jobRepository)
                 .start(step)
-                .listener(jobListener)                     // Listener para métricas
+                .listener(jobListener)                     
                 .build();
     }
 
-    // Job 2: Cálculo de Intereses Mensuales - MEJORADO
+    // Job 2: Cálculo de Intereses desde intereses.csv - SIMPLIFICADO
     @Bean
     public Job monthlyInterestJob(JobRepository jobRepository, 
                                  PlatformTransactionManager txManager,
@@ -236,60 +205,20 @@ public class BatchJobsConfig {
                                  FlatFileItemReader<AccountCsv> accountReader,
                                  EntityManagerFactory emf) {
 
-        JpaItemWriter<MonthlyInterest> writer = new JpaItemWriter<>();
-        writer.setEntityManagerFactory(emf);
+        // WRITER PERSONALIZADO - UPSERT para actualizar saldos sin errores de clave duplicada
+        ItemWriter<Account> writer = accountUpsertWriter;
 
-        ItemProcessor<AccountCsv, MonthlyInterest> processor = new ItemProcessor<>() {
-            @Override
-            public MonthlyInterest process(AccountCsv item) throws Exception {
-                // Usar el procesador mejorado para validaciones
-                Account validatedAccount = enhancedAccountProcessor.process(item);
-                if (validatedAccount == null) {
-                    return null; // skip invalid records
-                }
-                
-                MonthlyInterest mi = new MonthlyInterest();
-                String month = System.getProperty("month", YearMonth.now().toString());
-                mi.setMonthYear(month);
-                mi.setAccountNumber(validatedAccount.getAccountNumber());
-                
-                BigDecimal balance = validatedAccount.getBalance();
-                
-                // Aplicar tasas de interés diferenciadas por tipo de cuenta
-                BigDecimal rate = calculateInterestRate(validatedAccount.getType(), balance);
-                BigDecimal interest = balance.multiply(rate);
-                
-                mi.setInterestApplied(interest);
-                mi.setFinalBalance(balance.add(interest));
-                
-                logger.debug("Interés calculado para cuenta {}: {} (tasa: {})", 
-                    validatedAccount.getAccountNumber(), interest, rate);
-                
-                return mi;
-            }
-            
-            private BigDecimal calculateInterestRate(String accountType, BigDecimal balance) {
-                // Tasas diferenciadas según tipo de cuenta y saldo
-                return switch (accountType.toLowerCase()) {
-                    case "savings" -> balance.compareTo(new BigDecimal("50000")) > 0 ? 
-                                     new BigDecimal("0.004") : new BigDecimal("0.003");
-                    case "checking" -> new BigDecimal("0.001");
-                    case "business" -> balance.compareTo(new BigDecimal("100000")) > 0 ? 
-                                      new BigDecimal("0.0035") : new BigDecimal("0.002");
-                    case "credit" -> new BigDecimal("0.0015");
-                    default -> new BigDecimal("0.002");
-                };
-            }
-        };
+        // PROCESSOR SIMPLIFICADO - usa directamente el procesador (calcula intereses internamente)  
+        ItemProcessor<AccountCsv, Account> processor = accountProcessor;
 
         Step step = new StepBuilder("monthlyInterestStep", jobRepository)
-                .<AccountCsv, MonthlyInterest>chunk(5, txManager)  // Chunk size = 5
+                .<AccountCsv, Account>chunk(calculateOptimalChunkSize("accounts"), txManager)  
                 .reader(accountReader)
                 .processor(processor)
                 .writer(writer)
-                .taskExecutor(batchTaskExecutor)           // Procesamiento paralelo
+                .taskExecutor(batchTaskExecutor)           
                 .faultTolerant()
-                .skipPolicy(customSkipPolicy)              // Política personalizada
+                .skipPolicy(customSkipPolicy)              
                 .retryLimit(3)
                 .retry(Exception.class)
                 .listener(stepListener)
@@ -297,86 +226,22 @@ public class BatchJobsConfig {
 
         return new JobBuilder("monthlyInterestJob", jobRepository)
                 .start(step)
-                .listener(jobListener)                     // Listener para métricas
+                .listener(jobListener)                     
                 .build();
     }
 
-    // Job 3: Estados de Cuenta Anuales - MEJORADO
-    @Bean
-    public Job annualStatementJob(JobRepository jobRepository, 
-                                 PlatformTransactionManager txManager,
-                                 TaskExecutor batchTaskExecutor,
-                                 FlatFileItemReader<TransactionCsv> transactionReader,
-                                 EntityManagerFactory emf) {
-
-        JpaItemWriter<AnnualStatement> writer = new JpaItemWriter<>();
-        writer.setEntityManagerFactory(emf);
-
-        ItemProcessor<TransactionCsv, AnnualStatement> processor = new ItemProcessor<>() {
-            @Override
-            public AnnualStatement process(TransactionCsv item) throws Exception {
-                // Usar el procesador mejorado para validaciones
-                LegacyTransaction validatedTx = enhancedTransactionProcessor.process(item);
-                if (validatedTx == null) {
-                    return null; // skip invalid records
-                }
-                
-                AnnualStatement as = new AnnualStatement();
-                int year = validatedTx.getTxDate().getYear();
-                as.setYear(year);
-                as.setAccountNumber(validatedTx.getAccountNumber());
-                
-                // Clasificación mejorada de transacciones
-                BigDecimal amt = validatedTx.getAmount();
-                as.setOpeningBalance(BigDecimal.ZERO); // Se calculará en agregación posterior
-                
-                if (amt.signum() > 0) {
-                    as.setTotalDeposits(amt);
-                    as.setTotalWithdrawals(BigDecimal.ZERO);
-                } else {
-                    as.setTotalDeposits(BigDecimal.ZERO);
-                    as.setTotalWithdrawals(amt.abs());
-                }
-                
-                as.setClosingBalance(BigDecimal.ZERO); // Se calculará en agregación posterior
-                
-                // Log para transacciones de alto valor
-                if (amt.abs().compareTo(new BigDecimal("50000")) > 0) {
-                    logger.info("Transacción de alto valor en estado anual: {} - Cuenta: {} - Monto: {}", 
-                        validatedTx.getTxId(), validatedTx.getAccountNumber(), amt);
-                }
-                
-                return as;
-            }
-        };
-
-        Step step = new StepBuilder("annualStatementStep", jobRepository)
-                .<TransactionCsv, AnnualStatement>chunk(5, txManager)  // Chunk size = 5
-                .reader(transactionReader)
-                .processor(processor)
-                .writer(writer)
-                .taskExecutor(batchTaskExecutor)           // Procesamiento paralelo
-                .faultTolerant()
-                .skipPolicy(customSkipPolicy)              // Política personalizada
-                .retryLimit(3)
-                .retry(Exception.class)
-                .listener(stepListener)
-                .build();
-
-        return new JobBuilder("annualStatementJob", jobRepository)
-                .start(step)
-                .listener(jobListener)                     // Listener para métricas
-                .build();
-    }
-
-    // Job 4: Procesamiento de Cuentas Anuales desde CSV específico - NUEVO
+    // ❌ JOB ELIMINADO: annualStatementJob 
+    // MOTIVO: Mezcla artificialmente transacciones.csv con cuentas
+    // Las transacciones son independientes y no deben asociarse a cuentas
+    
+    // Job 3: Procesamiento de Cuentas Anuales Independientes - SIMPLIFICADO
     @Bean
     public Job annualAccountsJob(JobRepository jobRepository, 
                                 PlatformTransactionManager txManager,
                                 TaskExecutor batchTaskExecutor,
                                 EntityManagerFactory emf) {
 
-        // Reader para cuentas anuales
+        // Reader para cuentas anuales independientes
         FlatFileItemReader<CuentaAnualCsv> reader = new FlatFileItemReaderBuilder<CuentaAnualCsv>()
                 .name("cuentaAnualCsvReader")
                 .resource(new FileSystemResource(props.getDataDir() + "/cuentas_anuales.csv"))
@@ -389,20 +254,20 @@ public class BatchJobsConfig {
                 .build();
 
         // Writer
-        JpaItemWriter<AnnualStatement> writer = new JpaItemWriter<>();
+        JpaItemWriter<AnnualAccountData> writer = new JpaItemWriter<>();
         writer.setEntityManagerFactory(emf);
 
-        // Processor específico para cuentas anuales
-        CuentaAnualProcessor processor = new CuentaAnualProcessor();
+        // Processor SIMPLIFICADO - usa directamente el procesador sin servicios extra
+        ItemProcessor<CuentaAnualCsv, AnnualAccountData> processor = cuentaAnualProcessor;
 
         Step step = new StepBuilder("annualAccountsStep", jobRepository)
-                .<CuentaAnualCsv, AnnualStatement>chunk(5, txManager)  // Chunk size = 5
+                .<CuentaAnualCsv, AnnualAccountData>chunk(calculateOptimalChunkSize("annual"), txManager)  
                 .reader(reader)
                 .processor(processor)
                 .writer(writer)
-                .taskExecutor(batchTaskExecutor)           // Procesamiento paralelo
+                .taskExecutor(batchTaskExecutor)           
                 .faultTolerant()
-                .skipPolicy(customSkipPolicy)              // Política personalizada
+                .skipPolicy(customSkipPolicy)              
                 .retryLimit(3)
                 .retry(Exception.class)
                 .listener(stepListener)
@@ -410,7 +275,7 @@ public class BatchJobsConfig {
 
         return new JobBuilder("annualAccountsJob", jobRepository)
                 .start(step)
-                .listener(jobListener)                     // Listener para métricas
+                .listener(jobListener)                     
                 .build();
     }
 }

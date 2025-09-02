@@ -17,18 +17,15 @@ public class JobController {
     private final JobLauncher jobLauncher;
     private final Job dailyReportJob;
     private final Job monthlyInterestJob;
-    private final Job annualStatementJob;
     private final Job annualAccountsJob;
 
     public JobController(JobLauncher jobLauncher, 
                         @Qualifier("dailyReportJob") Job dailyReportJob, 
                         @Qualifier("monthlyInterestJob") Job monthlyInterestJob, 
-                        @Qualifier("annualStatementJob") Job annualStatementJob,
                         @Qualifier("annualAccountsJob") Job annualAccountsJob) {
         this.jobLauncher = jobLauncher;
         this.dailyReportJob = dailyReportJob;
         this.monthlyInterestJob = monthlyInterestJob;
-        this.annualStatementJob = annualStatementJob;
         this.annualAccountsJob = annualAccountsJob;
     }
 
@@ -37,7 +34,6 @@ public class JobController {
         Job job = switch (name) {
             case "dailyReportJob" -> dailyReportJob;
             case "monthlyInterestJob" -> monthlyInterestJob;
-            case "annualStatementJob" -> annualStatementJob;
             case "annualAccountsJob" -> annualAccountsJob;
             default -> throw new IllegalArgumentException("Unknown job: " + name);
         };

@@ -1,20 +1,32 @@
 package com.bankxyz.batch.dto;
 
 public class TransactionCsv {
-    private String tx_id;
-    private String account_number;
-    private String tx_date; // yyyy-MM-dd
-    private String description;
-    private String amount;
+    // Campos actualizados para coincidir con CSV real: id,fecha,monto,tipo
+    private String id;           // Cambio: era tx_id
+    private String fecha;        // Cambio: era tx_date
+    private String monto;        // Cambio: era amount
+    private String tipo;         // Cambio: era description
+    
+    // ❌ ELIMINAR: account_number (no existe en CSV real)
+    
+    public TransactionCsv() {}
 
-    public String getTx_id() { return tx_id; }
-    public void setTx_id(String tx_id) { this.tx_id = tx_id; }
-    public String getAccount_number() { return account_number; }
-    public void setAccount_number(String account_number) { this.account_number = account_number; }
-    public String getTx_date() { return tx_date; }
-    public void setTx_date(String tx_date) { this.tx_date = tx_date; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public String getAmount() { return amount; }
-    public void setAmount(String amount) { this.amount = amount; }
+    // Getters y Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+
+    public String getFecha() { return fecha; }
+    public void setFecha(String fecha) { this.fecha = fecha; }
+
+    public String getMonto() { return monto; }
+    public void setMonto(String monto) { this.monto = monto; }
+
+    public String getTipo() { return tipo; }
+    public void setTipo(String tipo) { this.tipo = tipo; }
+
+    @Override
+    public String toString() {
+        return String.format("TransactionCsv{id='%s', fecha='%s', monto='%s', tipo='%s'}", 
+            id, fecha, monto, tipo);
+    }
 }

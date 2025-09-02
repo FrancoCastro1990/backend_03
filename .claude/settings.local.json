@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(del \"src\\main\\resources\\db\\migration\\V3__remove_artificial_mappings.sql\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
