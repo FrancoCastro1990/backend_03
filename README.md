@@ -1,8 +1,43 @@
-# Sistema de Procesamiento Batch - Banco XYZ
+# 🏦 **Backend_03 - Backend Central con Autenticación JWT**
 
-## 🎯 Descripción
+## 🎯 **Descripción**
 
-Sistema de migración de procesos batch legacy utilizando **Spring Batch** para el Banco XYZ. Procesa **3 archivos CSV independientes** implementando los requerimientos exactos sin sobre-ingeniería.
+Backend central del sistema BFF que proporciona **autenticación JWT completa** y servicios de datos para los 3 BFFs especializados (Web, Mobile, ATM). Implementa el patrón **Backend for Frontend** sirviendo como fuente única de verdad para autenticación y datos.
+
+## 🔐 **Autenticación JWT Implementada**
+
+### Credenciales por Canal
+```json
+{
+  "web": {"username": "admin", "password": "admin123"},
+  "mobile": {"username": "mobile", "password": "mobile123"},
+  "atm": {"username": "atm", "password": "atm123"}
+}
+```
+
+### Obtener Token JWT
+```bash
+# Token para Web BFF
+curl -X POST http://localhost:8084/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
+
+# Token para Mobile BFF
+curl -X POST http://localhost:8084/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"username":"mobile","password":"mobile123"}'
+
+# Token para ATM BFF
+curl -X POST http://localhost:8084/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"username":"atm","password":"atm123"}'
+```
+
+### Usar Token en APIs
+```bash
+curl -H "Authorization: Bearer <TOKEN>" \
+  http://localhost:8084/api/accounts/124
+```
 
 ## 📋 Requerimientos Implementados
 
@@ -203,9 +238,34 @@ data/                              # 3 Archivos CSV
 - 🚀 **Throughput** (registros/segundo)
 - ✅ **Tasa de éxito** porcentual
 
-## 🎯 Estado del Proyecto
+## 🔗 **Integración con BFFs**
 
-### ✅ CUMPLIMIENTO DE REQUERIMIENTOS - 100%
+Este backend central es consumido por los **3 BFFs especializados**:
+
+### 🌐 **Web BFF** (Puerto 8081)
+- **Propósito**: Interfaces web completas
+- **Datos**: Información completa de cuentas
+- **Endpoint**: `http://localhost:8081/web/accounts/*`
+
+### 📱 **Mobile BFF** (Puerto 8082)
+- **Propósito**: Aplicaciones móviles
+- **Datos**: Información simplificada
+- **Endpoint**: `http://localhost:8082/mobile/accounts/*`
+
+### 🏧 **ATM BFF** (Puerto 8083)
+- **Propósito**: Cajeros automáticos
+- **Datos**: Solo información crítica (balance)
+- **Endpoint**: `http://localhost:8083/atm/accounts/*/balance`
+
+### Arquitectura de Comunicación
+```
+Web BFF ──┐
+          ├──► Backend_03 (JWT Auth + Data)
+Mobile BFF ┘
+ATM BFF ───┘
+```
+
+## 🎯 **Estado del Proyecto**
 
 **1. ✅ Proyecto Spring Batch Configurado**
 - [x] Spring Batch jobs configurados
