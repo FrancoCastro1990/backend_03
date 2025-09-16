@@ -35,6 +35,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable())
+            .cors(cors -> cors.disable()) // Deshabilitar CORS por ahora para testing
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authz -> authz
                 .requestMatchers("/api/auth/**").permitAll()
@@ -73,6 +74,18 @@ public class SecurityConfig {
                 .roles("USER")
                 .build();
 
-        return new InMemoryUserDetailsManager(admin, user);
+        UserDetails mobile = User.builder()
+                .username("mobile")
+                .password(passwordEncoder().encode("mobile123"))
+                .roles("MOBILE")
+                .build();
+
+        UserDetails atm = User.builder()
+                .username("atm")
+                .password(passwordEncoder().encode("atm123"))
+                .roles("ATM")
+                .build();
+
+        return new InMemoryUserDetailsManager(admin, user, mobile, atm);
     }
 }

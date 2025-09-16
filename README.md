@@ -18,17 +18,17 @@ Backend central del sistema BFF que proporciona **autenticación JWT completa** 
 ### Obtener Token JWT
 ```bash
 # Token para Web BFF
-curl -X POST http://localhost:8084/auth/token \
+curl -X POST http://localhost:8084/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123"}'
 
 # Token para Mobile BFF
-curl -X POST http://localhost:8084/auth/token \
+curl -X POST http://localhost:8084/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"mobile","password":"mobile123"}'
 
 # Token para ATM BFF
-curl -X POST http://localhost:8084/auth/token \
+curl -X POST http://localhost:8084/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"atm","password":"atm123"}'
 ```
@@ -39,58 +39,63 @@ curl -H "Authorization: Bearer <TOKEN>" \
   http://localhost:8084/api/accounts/124
 ```
 
-## 📋 Requerimientos Implementados
+## ✅ **Características del Backend Central**
 
-### 1. ✅ Configurar Proyecto Spring Batch
-- **Spring Boot 3.3.2** con Spring Batch
-- **3 Jobs independientes** con Steps configurados
-- **Repository GitHub** versionado
+### 🔐 **Autenticación JWT**
+- ✅ **JWT completo**: Generación y validación de tokens
+- ✅ **Canales especializados**: Tokens específicos por canal (web, mobile, atm)
+- ✅ **Spring Security**: Integración completa con Spring Security
+- ✅ **Role-based Access**: Control de acceso por roles
 
-### 2. ✅ Implementar Procesamiento de Datos  
-- **Lectura CSV** con FlatFileItemReader
-- **Transformaciones y validaciones** con ItemProcessor
-- **Escritura en PostgreSQL** con ItemWriter personalizado
+### 📊 **Servicios de Datos**
+- ✅ **API REST**: Endpoints para cuentas y transacciones
+- ✅ **Base de datos PostgreSQL**: Persistencia de datos
+- ✅ **Health checks**: Monitoreo de estado del servicio
+- ✅ **Documentación**: Endpoints documentados
 
-### 3. ✅ Manejo de Errores y Excepciones
-- **CustomSkipPolicy** para datos incorrectos y mal clasificados
-- **Validaciones de consistencia** (fechas, montos, tipos)
-- **Skip y retry logic** para garantizar integridad
+## 📊 **Endpoints de la API**
 
-### 4. ✅ Políticas Personalizadas y Tolerancia a Fallos
-- **Skip policies personalizadas** por tipo de error
-- **Retry logic** con límites configurables
-- **Logging detallado** de errores y anomalías
+### 👤 **Información de Cuentas**
+```bash
+# Lista completa de cuentas
+GET /api/accounts
 
-### 5. ✅ Políticas de Escalamiento
-- **Multi-threading** con ThreadPoolTaskExecutor
-- **Configuración optimizada**: 3 core threads, 5 max threads
-- **Chunk processing** con tamaño optimizado por job
+# Datos detallados de una cuenta específica
+GET /api/accounts/{accountNumber}
 
-## 🎯 Jobs Implementados
+# Ejemplo de respuesta completa:
+{
+  "accountNumber": "124",
+  "ownerName": "Diana Prince",
+  "balance": 15000.00,
+  "currency": "USD",
+  "accountType": "CHECKING",
+  "status": "ACTIVE",
+  "createdDate": "2023-01-15",
+  "lastTransaction": "2024-09-15"
+}
+```
 
-### Job 1: `dailyReportJob`
-- **Archivo**: `transacciones.csv` 
-- **Requerimiento**: "Procesar transacciones diarias para detectar anomalías y generar un resumen"
-- **Implementación**: 
-  - Detecta anomalías (montos extremos, fechas inválidas)
-  - Genera resumen por logging
-  - Guarda en tabla `transaction_legacy`
+### 💳 **Transacciones**
+```bash
+# Historial de transacciones de una cuenta
+GET /api/accounts/{accountNumber}/transactions
 
-### Job 2: `monthlyInterestJob`  
-- **Archivo**: `intereses.csv`
-- **Requerimiento**: "Aplicar intereses sobre cuentas y actualizar el saldo final en base de datos"
-- **Implementación**:
-  - Calcula intereses mensuales por tipo de cuenta
-  - Actualiza balance con UPSERT logic
-  - Guarda/actualiza en tabla `account`
+# Con filtros opcionales
+GET /api/accounts/{accountNumber}/transactions?startDate=2024-01-01&endDate=2024-09-15
+```
 
-### Job 3: `annualAccountsJob`
-- **Archivo**: `cuentas_anuales.csv` 
-- **Requerimiento**: "Compilar datos anuales para cada cuenta y generar un informe detallado para auditorías"
-- **Implementación**:
-  - Compila datos anuales por cuenta
-  - Genera informe detallado por logging
-  - Guarda en tabla `annual_account_data`
+### 🔍 **Búsqueda y Filtros**
+```bash
+# Búsqueda por propietario
+GET /api/accounts/search?owner=Diana
+
+# Filtros por tipo de cuenta
+GET /api/accounts?type=CHECKING
+
+# Paginación
+GET /api/accounts?page=0&size=10&sort=balance,desc
+```
 
 ## 🛠️ Requisitos
 
@@ -115,9 +120,9 @@ docker compose up -d
 ./mvnw spring-boot:run
 ```
 
-La aplicación inicia en **http://localhost:8080**
+La aplicación inicia en **http://localhost:8084**
 
-## 🧪 Cómo Probar Cada Job
+## 🧪 **Ejemplos de Uso**
 
 ### Prueba Individual de Jobs
 
@@ -154,89 +159,94 @@ curl "http://localhost:8080/jobs/run?name=annualAccountsJob"
 - 🔍 Cuentas marcadas para auditoría 
 - ✅ Datos compilados correctamente
 
-### Ver Logs en Tiempo Real
+### 1. Verificación Completa de API
 ```bash
-# Ver logs detallados
-tail -f logs/batch-processing.log
+# Script completo de verificación
+echo "=== VERIFICACIÓN BACKEND CENTRAL ==="
 
-# En Windows
-Get-Content logs/batch-processing.log -Wait
+# 1. Obtener token
+TOKEN=$(curl -s -X POST http://localhost:8084/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}' | jq -r '.token')
+
+echo "Token obtenido: ${TOKEN:0:50}..."
+
+# 2. Verificar lista de cuentas
+echo "Lista de cuentas:"
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8084/api/accounts | jq '.[0]'
+
+# 3. Verificar datos de cuenta específica
+echo "Datos de cuenta 124:"
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8084/api/accounts/124 | jq '.'
+
+# 4. Verificar transacciones
+echo "Transacciones de cuenta 124:"
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8084/api/accounts/124/transactions | jq '.[0]'
 ```
 
-## 📊 Verificación de Datos en Base
-
-### Conectar a PostgreSQL
+### 2. Verificación de Autenticación
 ```bash
-docker exec -it backend_03-db-1 psql -U postgres -d batchdb
-```
-
-### Verificar Datos Procesados
-```sql
--- Transacciones procesadas (dailyReportJob)
-SELECT COUNT(*) FROM transaction_legacy;
-SELECT * FROM transaction_legacy LIMIT 5;
-
--- Cuentas con intereses (monthlyInterestJob) 
-SELECT COUNT(*) FROM account;
-SELECT account_number, balance FROM account LIMIT 5;
-
--- Datos anuales compilados (annualAccountsJob)
-SELECT COUNT(*) FROM annual_account_data;
-SELECT account_number, year, total_deposits FROM annual_account_data LIMIT 5;
+# Verificar endpoint de información del usuario
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8084/api/auth/me
 ```
 
 ## 🏗️ Arquitectura Técnica
 
 ### Stack Tecnológico
-- **Spring Boot 3.3.2** + **Spring Batch**
-- **PostgreSQL 16** + **Flyway**
-- **Docker** + **Maven**
+- **Spring Boot 3.3.2** - Framework principal
+- **Spring Security** - Autenticación y autorización JWT
+- **PostgreSQL 16** - Base de datos
+- **Spring Data JPA** - Acceso a datos
+- **Docker** - Contenedorización
 
-### Estructura Simplificada
+### Estructura del Proyecto
 ```
-src/main/java/com/bankxyz/batch/
-├── BatchApplication.java
-├── job/BatchJobsConfig.java       # 3 Jobs configurados
-├── processor/                     # 3 Procesadores independientes
-│   ├── TransactionProcessor.java  
-│   ├── AccountProcessor.java
-│   └── CuentaAnualProcessor.java
-├── writer/AccountUpsertWriter.java # Writer personalizado UPSERT
-├── model/                         # 3 Entidades JPA
-└── web/JobController.java         # REST endpoints
-
-src/main/resources/
-├── db/migration/V1__init_schema.sql # Solo tablas necesarias
-└── application.yaml
-
-data/                              # 3 Archivos CSV
-├── transacciones.csv
-├── intereses.csv  
-└── cuentas_anuales.csv
+backend_03/
+├── src/main/java/com/bankxyz/batch/
+│   ├── BatchApplication.java
+│   ├── controller/
+│   │   ├── AuthController.java          # /api/auth/*
+│   │   └── AccountController.java       # /api/accounts/*
+│   ├── service/
+│   │   ├── AuthService.java             # Lógica de autenticación
+│   │   └── AccountService.java          # Lógica de cuentas
+│   ├── repository/
+│   │   └── AccountRepository.java       # Acceso a BD
+│   └── model/
+│       └── Account.java                 # Entidad JPA
+├── src/main/resources/
+│   ├── application.yml                  # Config puerto 8084
+│   └── data.sql                         # Datos de prueba
+└── pom.xml                              # Dependencias Maven
 ```
 
 ### Características Técnicas
+- ✅ **JWT Authentication**: Tokens seguros con expiración
+- ✅ **Role-based Security**: Control de acceso granular
+- ✅ **Database Integration**: PostgreSQL con JPA
+- ✅ **RESTful API**: Endpoints bien diseñados
+- ✅ **Health Monitoring**: Actuator para monitoreo
+- ✅ **Error Handling**: Manejo robusto de errores  
 
-**✅ Procesamiento Independiente**: Cada CSV se procesa sin dependencias  
-**✅ Multi-threading**: 3 core threads, 5 max threads  
-**✅ Fault Tolerance**: Skip policies y retry logic  
-**✅ UPSERT Logic**: Evita errores de clave duplicada  
-**✅ Validaciones de Negocio**: Fechas, montos, tipos de cuenta  
-**✅ Detección de Anomalías**: Automática con logging  
-**✅ Escalabilidad**: Chunk processing optimizado  
+## � **Monitoreo y Health Checks**
 
-## 📝 Logs y Monitoreo
+### Health Check
+```bash
+curl http://localhost:8084/actuator/health
+```
 
-### Ubicación de Logs
-- **Aplicación**: `logs/batch-processing.log`
-- **Spring Boot**: Consola estándar
+### Métricas Disponibles
+```bash
+# Información del servicio
+curl http://localhost:8084/actuator/info
 
-### Métricas Disponibles  
-- ⏱️ **Duración total** por job
-- 📖 **Registros leídos/procesados/escritos**
-- ❌ **Errores y omisiones**
-- 🚀 **Throughput** (registros/segundo)
-- ✅ **Tasa de éxito** porcentual
+# Métricas de rendimiento
+curl http://localhost:8084/actuator/metrics
+```
 
 ## 🔗 **Integración con BFFs**
 
@@ -267,34 +277,14 @@ ATM BFF ───┘
 
 ## 🎯 **Estado del Proyecto**
 
-**1. ✅ Proyecto Spring Batch Configurado**
-- [x] Spring Batch jobs configurados
-- [x] Repository GitHub versionado  
-- [x] Steps para leer, procesar, escribir
+**✅ Proyecto Backend Central Completado**
+- [x] Autenticación JWT implementada
+- [x] API REST completa
+- [x] Integración con PostgreSQL
+- [x] Health checks operativos
+- [x] Documentación completa
+- [x] Integración con 3 BFFs
 
-**2. ✅ Procesamiento de Datos Implementado** 
-- [x] Lectura de archivos CSV
-- [x] Transformaciones con ItemProcessor
-- [x] Validaciones y manejo de errores
-- [x] Escritura en PostgreSQL
+---
 
-**3. ✅ Manejo de Errores y Excepciones**
-- [x] Datos incorrectos y mal clasificados manejados
-- [x] Reglas de consistencia implementadas
-- [x] Skip policies personalizadas
-
-**4. ✅ Políticas Personalizadas y Tolerancia a Fallos**
-- [x] Políticas personalizadas implementadas
-- [x] Tolerancia a fallos correcta
-- [x] Retry logic configurado
-
-**5. ✅ Políticas de Escalamiento**
-- [x] Multi-threading implementado
-- [x] Parámetros optimizados (3-5 threads)
-- [x] Chunk processing configurado
-
-### 🎯 Jobs Funcionando Correctamente
-
-- ✅ **dailyReportJob**: COMPLETED - Detecta anomalías  
-- ✅ **monthlyInterestJob**: COMPLETED - Actualiza saldos
-- ✅ **annualAccountsJob**: COMPLETED - Compila informes
+**🚀 Backend central operativo y sirviendo a todos los BFFs especializados**
