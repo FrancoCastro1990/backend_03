@@ -1,6 +1,7 @@
 package com.bankxyz.batch.model;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 
 @Entity
@@ -10,15 +11,25 @@ public class Account {
     private Long id;
 
     @Column(name = "account_number", unique = true, nullable = false)
+    @NotNull(message = "Account number cannot be null")
+    @Size(min = 1, max = 50, message = "Account number must be between 1 and 50 characters")
     private String accountNumber;
 
+    @NotNull(message = "Owner name cannot be null")
+    @Size(min = 1, max = 100, message = "Owner name must be between 1 and 100 characters")
     private String ownerName;
+
+    @NotNull(message = "Account type cannot be null")
     private String type;
 
+    @NotNull(message = "Balance cannot be null")
+    @DecimalMin(value = "0.0", inclusive = true, message = "Balance must be non-negative")
     private BigDecimal balance = BigDecimal.ZERO;
 
     // ✅ NUEVO CAMPO
     @Column(name = "age")
+    @Min(value = 0, message = "Age must be non-negative")
+    @Max(value = 150, message = "Age must be less than or equal to 150")
     private Integer age;
 
     // Constructores

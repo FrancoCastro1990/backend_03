@@ -1,0 +1,74 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://prod-db:5432/batchdb}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+  batch:
+    jdbc:
+      initialize-schema: never
+    job:
+      enabled: false
+
+# Path to legacy CSV data
+bankxyz:
+  dataDir: ${BANK_DATA_DIR:/app/data}
+
+# JWT Configuration for Production
+jwt:
+  secret: ${JWT_SECRET:mySecretKeyThatIsAtLeast256BitsLongForHS256AlgorithmAndShouldBeChangedInProduction}
+  expiration: ${JWT_EXPIRATION:3600000}  # 1 hora en milisegundos (más seguro)
+
+# Minimal logging for production
+logging:
+  level:
+    root: WARN
+    org.springframework.batch: INFO
+    com.bankxyz.batch: INFO
+    com.bankxyz.batch.listener: WARN
+    com.bankxyz.batch.processor: INFO
+    com.bankxyz.batch.policy: WARN
+    org.springframework.security: WARN
+    org.springframework.web: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%logger{36}] - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%logger{36}] - %msg%n"
+  file:
+    name: /app/logs/batch-processing-prod.log
+    max-size: 50MB
+    max-history: 90
+
+# Production specific configurations
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
+
+# Security configurations for production
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never
+
+# Connection pool settings for production
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      connection-timeout: 20000

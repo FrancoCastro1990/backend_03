@@ -1,0 +1,55 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/batchdb}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+  batch:
+    jdbc:
+      initialize-schema: never
+    job:
+      enabled: false
+
+# Path to legacy CSV data
+bankxyz:
+  dataDir: ${BANK_DATA_DIR:/app/data}
+
+# JWT Configuration for Docker
+jwt:
+  secret: ${JWT_SECRET:mySecretKeyThatIsAtLeast256BitsLongForHS256AlgorithmAndShouldBeChangedInProduction}
+  expiration: ${JWT_EXPIRATION:3600000}
+
+# Logging for Docker
+logging:
+  level:
+    root: INFO
+    org.springframework.batch: INFO
+    com.bankxyz.batch: INFO
+    org.springframework.security: WARN
+    org.springframework.web: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%logger{36}] - %msg%n"
+  file:
+    name: /app/logs/batch-processing.log
+    max-size: 50MB
+    max-history: 30
+
+# Server configuration for Docker
+server:
+  port: 8081
+
+# Management endpoints for health checks
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

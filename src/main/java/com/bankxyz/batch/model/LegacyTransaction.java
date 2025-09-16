@@ -1,6 +1,7 @@
 package com.bankxyz.batch.model;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -10,10 +11,21 @@ public class LegacyTransaction {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotNull(message = "Transaction ID cannot be null")
+    @Size(min = 1, max = 50, message = "Transaction ID must be between 1 and 50 characters")
     private String txId;
+
+    @Size(max = 50, message = "Account number must be less than or equal to 50 characters")
     private String accountNumber;
+
+    @NotNull(message = "Transaction date cannot be null")
+    @PastOrPresent(message = "Transaction date cannot be in the future")
     private LocalDate txDate;
+
+    @Size(max = 255, message = "Description must be less than or equal to 255 characters")
     private String description;
+
+    @NotNull(message = "Amount cannot be null")
     private BigDecimal amount;
 
     // getters & setters
